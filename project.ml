@@ -195,7 +195,10 @@ let rec subst ((d, z) : exp * ident) (e : exp) : exp =
   | Comma (e1, e2) -> Comma (subst (d, z) e1, subst (d, z) e2) 
   | LetComma (x, y, e1, e2) ->
       let e1' = subst (d, z) e1 in
-      let e2' = if x = z || y = z then e2 else subst (d, z) e2 in
+      let e2' = 
+        if x = z || y = z then e2
+        else subst (d, z) e2 
+      in
       LetComma (x, y, e1', e2')
 
   | Fn (x, tOpt, e') ->
@@ -209,16 +212,20 @@ let rec subst ((d, z) : exp * ident) (e : exp) : exp =
   | Apply (e1, e2) ->
       Apply (subst (d, z) e1, subst (d, z) e2)
 
-  | Rec (f, tOpt, e') ->
-      if f = z then
-        Rec (f, tOpt, e')
+  | Rec (f, tOpt, e') -> 
+      if f = z 
+      then Rec (f, tOpt, e')
       else
         let e'' = subst (d, z) e' in
         Rec (f, tOpt, e'')
 
   | Let (x, e1, e2) ->
       let e1' = subst (d, z) e1 in
-      let e2' = if x = z then e2 else subst (d, z) e2 in
+      let e2' = 
+        if x = z 
+        then e2 
+        else subst (d, z) e2 
+      in
       Let (x, e1', e2')
       
   | Var x ->
@@ -257,17 +264,54 @@ let rec eval (e : exp) : exp =
       end
 
   | ConstB _ -> e
-  | If (e', e1, e2) -> raise NotImplemented
+  | If (e', e1, e2) -> 
+      begin
+        match eval e' with
+        | ConstB true -> eval e1
+        | ConstB false -> eval e2
+        | _ -> raise EvaluationStuck
+      end
 
   | Comma (e1, e2) -> Comma (eval e1, eval e2)
-  | LetComma (x, y, e1, e2) -> raise NotImplemented
+  | LetComma (x, y, e1, e2) -> 
+      begin
+        let e1' = eval e1 in
+        match e1' with
+        | Comma (vx, vy) ->
+            let e2' = subst (vy, y) e2 in 
+            let e2'' = subst (vx, x) e2' in 
+            eval e2''
+        | _ -> raise EvaluationStuck
+      end
 
-  | Fn (x, tOpt, e') -> raise NotImplemented
-  | Apply (e1, e2) -> raise NotImplemented
+  | Fn (x, tOpt, e') ->
+      Fn (x, tOpt, e')
+          
+  | Apply (e1, e2) -> 
+      begin
+        let e1' = eval e1 in
+        match e1' with
+        | Fn (ident, typ, exp) ->
+            let e2' = eval e2 in
+            let exp' = subst (e2', ident) exp in
+            eval exp'
+        | _ -> raise EvaluationStuck
+      end
+      
+  | Rec (f, tOpt, e') ->
+      begin
+        let f' = eval (Fn (f, tOpt, e')) in
+        match f' with
+        | Fn (ident, _, exp) ->
+            let exp' = subst (Rec (f, tOpt, e'), ident) exp in
+            eval exp'
+        | _ -> raise EvaluationStuck
+      end
 
-  | Rec (f, tOpt, e') -> raise NotImplemented
-
-  | Let (x, e1, e2) -> raise NotImplemented
+  | Let (x, e1, e2) ->
+      let e1' = eval e1 in
+      let e2' = subst (e1', x) e2 in
+      eval e2' 
   | Var _ -> raise EvaluationStuck
 
 (** DO NOT Change This Definition *)
