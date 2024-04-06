@@ -140,17 +140,33 @@ let rec free_vars (e : exp) : IdentSet.t =
   | PrimUop (_, e') -> free_vars e'
 
   | ConstB _ -> IdentSet.empty
-  | If (e', e1, e2) -> raise NotImplemented
+  | If (e', e1, e2) -> 
+      let set = IdentSet.union (free_vars e1) (free_vars e2) in
+      IdentSet.union (free_vars e') set
 
   | Comma (e1, e2) -> IdentSet.union (free_vars e1) (free_vars e2)
-  | LetComma (x, y, e1, e2) -> raise NotImplemented
+  | LetComma (x, y, e1, e2) ->
+      let set = IdentSet.union (free_vars e1) (free_vars e2) in
+      let set = IdentSet.remove x set in
+      let set = IdentSet.remove y set in
+      set
 
-  | Fn (x, tOpt, e') -> raise NotImplemented
-  | Apply (e1, e2) -> raise NotImplemented
+  | Fn (x, tOpt, e') ->
+      let set = free_vars e' in
+      let set = IdentSet.remove x set in
+      set
+        
+  | Apply (e1, e2) ->
+      IdentSet.union (free_vars e1) (free_vars e2)
 
-  | Rec (f, tOpt, e') -> raise NotImplemented
+  | Rec (f, tOpt, e') ->
+      IdentSet.remove f (free_vars e')
 
-  | Let (x, e1, e2) -> raise NotImplemented
+  | Let (x, e1, e2) -> 
+      let set1 = free_vars e1 in
+      let set2 = IdentSet.remove x (free_vars e2) in
+      IdentSet.union set1 set2
+        
   | Var x -> IdentSet.singleton x
 
 (** DO NOT Change This Definition *)
