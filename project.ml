@@ -336,9 +336,9 @@ let rec unify : typ -> typ -> unit =
     match t with
     | Int -> false
     | Bool -> false
-    | Pair (t1, t2) -> raise NotImplemented
-    | Arrow (t1, t2) -> raise NotImplemented
-    | TVar y -> raise NotImplemented
+    | Pair (t1, t2) -> occurs_check x t1 || occurs_check x t2
+    | Arrow (t1, t2) -> occurs_check x t1 || occurs_check x t2
+    | TVar y -> is_same_tvar x y
   in
   fun ta tb ->
     let ta = rec_follow_tvar ta in
@@ -346,10 +346,12 @@ let rec unify : typ -> typ -> unit =
     match ta, tb with
     | Int, Int -> ()
     | Bool, Bool -> ()
-    | Pair (ta1, ta2), Pair (tb1, tb2) -> raise NotImplemented
-    | Arrow (ta1, ta2), Arrow (tb1, tb2) -> raise NotImplemented
+    | Pair (ta1, ta2), Pair (tb1, tb2) -> unify ta1 tb1; unify ta2 tb2
+    | Arrow (ta1, ta2), Arrow (tb1, tb2) -> unify ta1 tb1; unify ta2 tb2
     | TVar xa, TVar xb when is_same_tvar xa xb -> ()
-    | TVar xa, _ -> raise NotImplemented
+    | TVar xa, _ -> 
+        if occurs_check xa tb then raise OccursCheckFailure
+        else xa := Some tb
     | _, TVar xb -> unify tb ta
     | _, _ -> raise UnificationFailure
 
