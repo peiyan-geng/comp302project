@@ -370,29 +370,85 @@ let adv_typ_infer_test_case1 =
 
 let adv_typ_infer_test_helper_tests : ((Context.t * exp) * typ option) list = [
   adv_typ_infer_test_case1
-]
+] 
 
 let rec adv_typ_infer (ctx : Context.t) (e : exp) : typ =
+  let new_deref_tvar () : typ =
+    let t_ref = new_tvar () in
+    match !t_ref with
+    | None -> TVar (ref None)
+    | Some t -> t 
+  in
   match e with
-  | ConstI n -> raise NotImplemented
-  | PrimBop (e1, bop, e2) -> raise NotImplemented
-  | PrimUop (uop, e') -> raise NotImplemented
-
-  | ConstB b -> raise NotImplemented
-  | If (e', e1, e2) -> raise NotImplemented
-
-  | Comma (e1, e2) -> raise NotImplemented
-  | LetComma (x, y, e1, e2) -> raise NotImplemented
-
-  | Fn (x, Some t, e') -> raise NotImplemented
-  | Fn (x, None, e') -> raise IgnoredInPart2
-  | Apply (e1, e2) -> raise NotImplemented
-
-  | Rec (f, Some t, e') -> raise NotImplemented
-  | Rec (f, None, e') -> raise IgnoredInPart2
-
-  | Let (x, e1, e2) -> raise NotImplemented
-  | Var x -> raise NotImplemented
+  | ConstI n -> Int
+  | PrimBop (e1, bop, e2) -> 
+      let t1 = adv_typ_infer ctx e1 in
+      let t2 = adv_typ_infer ctx e2 in
+      unify t1 Int;
+      unify t2 Int;
+      Int
+  | PrimUop (uop, e') -> 
+      let t = adv_typ_infer ctx e' in
+      unify t Int;
+      Int
+  | ConstB b -> Bool
+  | If (e', e1, e2) -> 
+      let t' = adv_typ_infer ctx e' in
+      let t1 = adv_typ_infer ctx e1 in
+      let t2 = adv_typ_infer ctx e2 in
+      unify t' Bool;
+      unify t1 t2;
+      t1
+  | Comma (e1, e2) -> adv_typ_infer ctx e2
+  | LetComma (x, y, e1, e2) -> 
+      begin
+        let t1 = adv_typ_infer ctx e1 in
+        match t1 with
+        | Pair (tx, ty) ->
+            let ctx' = Context.extend (Context.extend ctx (x, tx)) (y, ty) in
+            adv_typ_infer ctx' e2
+        | _ -> raise TypeInferenceError
+      end
+      
+  | Fn (x, Some t, e') -> 
+      let ctx' = Context.extend ctx (x, t) in
+      let t' = adv_typ_infer ctx' e' in
+      Arrow (t, t')
+  | Fn (x, None, e') -> 
+      let t_ref = new_deref_tvar () in
+      let ctx' = Context.extend ctx (x, t_ref) in
+      let t' = adv_typ_infer ctx' e' in
+      unify t_ref t';
+      Arrow (t_ref, t') 
+  | Apply (e1, e2) -> 
+      let t1 = adv_typ_infer ctx e1 in
+      let t2 = adv_typ_infer ctx e2 in
+      let t_ref = new_deref_tvar () in
+      unify t1 (Arrow (t2, t_ref));
+      t_ref
+      
+  | Rec (f, Some t, e') -> 
+      let ctx' = Context.extend ctx (f, t) in
+      let t' = adv_typ_infer ctx' e' in
+      unify t t';
+      t
+  | Rec (f, None, e') -> 
+      let t_ref = new_deref_tvar () in
+      let ctx' = Context.extend ctx (f, t_ref) in
+      let t' = adv_typ_infer ctx' e' in
+      unify t_ref t';
+      t_ref
+      
+  | Let (x, e1, e2) -> 
+      let t1 = adv_typ_infer ctx e1 in
+      let ctx' = Context.extend ctx (x, t1) in
+      adv_typ_infer ctx' e2
+  | Var x -> 
+      begin
+        match Context.lookup ctx x with
+        | Some typ -> typ
+        | None -> raise TypeInferenceError
+      end
 
 (** DO NOT Change This Definition *)
 let adv_typ_infer_test_helper ctx e =
