@@ -189,17 +189,38 @@ let rec subst ((d, z) : exp * ident) (e : exp) : exp =
   | PrimUop (uop, e') -> PrimUop (uop, subst (d, z) e')
 
   | ConstB _ -> e
-  | If (e', e1, e2) -> raise NotImplemented
+  | If (e', e1, e2) ->
+      If (subst (d, z) e', subst (d, z) e1, subst (d, z) e2)
 
-  | Comma (e1, e2) -> Comma (subst (d, z) e1, subst (d, z) e2)
-  | LetComma (x, y, e1, e2) -> raise NotImplemented
+  | Comma (e1, e2) -> Comma (subst (d, z) e1, subst (d, z) e2) 
+  | LetComma (x, y, e1, e2) ->
+      let e1' = subst (d, z) e1 in
+      let e2' = if x = z || y = z then e2 else subst (d, z) e2 in
+      LetComma (x, y, e1', e2')
 
-  | Fn (x, tOpt, e') -> raise NotImplemented
-  | Apply (e1, e2) -> raise NotImplemented
+  | Fn (x, tOpt, e') ->
+      if x = z
+      then e
+      else
+        let x' = fresh_ident "x'" in
+        let e' = subst ((Var x'), x) e' in
+        Fn (x', tOpt, subst (d, z) e')
+          
+  | Apply (e1, e2) ->
+      Apply (subst (d, z) e1, subst (d, z) e2)
 
-  | Rec (f, tOpt, e') -> raise NotImplemented
+  | Rec (f, tOpt, e') ->
+      if f = z then
+        Rec (f, tOpt, e')
+      else
+        let e'' = subst (d, z) e' in
+        Rec (f, tOpt, e'')
 
-  | Let (x, e1, e2) -> raise NotImplemented
+  | Let (x, e1, e2) ->
+      let e1' = subst (d, z) e1 in
+      let e2' = if x = z then e2 else subst (d, z) e2 in
+      Let (x, e1', e2')
+      
   | Var x ->
       if x = z
       then d
