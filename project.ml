@@ -195,11 +195,9 @@ let rec subst ((d, z) : exp * ident) (e : exp) : exp =
   | Comma (e1, e2) -> Comma (subst (d, z) e1, subst (d, z) e2) 
   | LetComma (x, y, e1, e2) ->
       let e1' = subst (d, z) e1 in
-      let e2' = 
-        if x = z || y = z then e2
-        else subst (d, z) e2 
-      in
-      LetComma (x, y, e1', e2')
+      let (x', e2') = rename (x, e2) in
+      let (y', e2'') = rename (y, e2') in
+      LetComma (x', y', e1', subst (d, z) e2'')
 
   | Fn (x, tOpt, e') ->
       if x = z
@@ -213,20 +211,13 @@ let rec subst ((d, z) : exp * ident) (e : exp) : exp =
       Apply (subst (d, z) e1, subst (d, z) e2)
 
   | Rec (f, tOpt, e') -> 
-      if f = z 
-      then Rec (f, tOpt, e')
-      else
-        let e'' = subst (d, z) e' in
-        Rec (f, tOpt, e'')
+      let (f', e'') = rename (f, e') in
+      Rec (f', tOpt, subst (d, z) e'')
 
   | Let (x, e1, e2) ->
       let e1' = subst (d, z) e1 in
-      let e2' = 
-        if x = z 
-        then e2 
-        else subst (d, z) e2 
-      in
-      Let (x, e1', e2')
+      let (x', e2') = rename (x, e2) in
+      Let (x', e1', subst (d, z) e2')
       
   | Var x ->
       if x = z
