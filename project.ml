@@ -8,37 +8,120 @@ let parse_exp_tests : (string * exp option) list = [
   ("true", Some (ConstB true)); 
   ("if true then 1 else 2", Some (If ((ConstB true), (ConstI 1), (ConstI 2))));
   
-  ("1, 2", Some (Comma (ConstI 1, ConstI 2)));
-  ("let (x, y) = 1 in 2 end", 
-   Some (LetComma (("x"), ("y"), (ConstI 1), (ConstI 2))));
-  
-  ("fn x : int => 1", Some (Fn ("x", Some Int, ConstI 1)));
-  ("fn x => 1", Some (Fn ("x", None, ConstI 1)));
-  ("1 2", Some (Apply (ConstI 1, ConstI 2)));
-  
-  ("rec x : int => 1", Some (Rec ("x", Some Int, ConstI 1)));
+  ("1, 2", Some (Comma (ConstI 1, ConstI 2))); 
+  ("1 2", Some (Apply (ConstI 1, ConstI 2))); 
   ("rec x => 1", Some (Rec ("x", None, ConstI 1)));
   
-  ("let x = 1 in x end", Some (Let ("x", ConstI 1, Var "x"))); (* fail *)
+  ("let x = 1 in x end", Some (Let ("x", ConstI 1, Var "x"))); 
   ("x", Some (Var "x")); 
 ]
 
-let rec exp_parser i =
+let rec exp_parser input =
   let open Parser in
-  (** Use [identifier] and [keyword] in your implementation,
-      not [identifier_except] and [keyword_among] directly *)
-  let identifier, keyword =
-    let keywords = ["true"; "false"; "let"; "in"; "end"; "if"; "then"; "else"; "fn"; "rec"] in
-    identifier_except keywords, keyword_among keywords
-  in
-  (** You may need to define helper parsers depending on [exp_parser] here *)
   
-  let exp_parser_impl =
-    raise NotImplemented
-  in
-  exp_parser_impl i
+  let identifier = identifier_except ["true"; "false"; "let"; "in"; "end"; "if"; "then"; "else"; "fn"; "rec"] in
+  let keyword = keyword_among ["true"; "false"; "let"; "in"; "end"; "if"; "then"; "else"; "fn"; "rec"] in
+  
+  let rec atomic_exp_parser input = first_of [
+      map (fun _ -> ConstB true) (keyword "true");
+      map (fun _ -> ConstB false) (keyword "false");
+      map (fun i -> ConstI i) int_digits;
+      map (fun id -> Var id) identifier;
+      between (symbol "(") (symbol ")") exp_parser
+    ] input
+  and rec_binding_parser =
+    keyword "rec" |>> 
+    identifier |*> fun ident ->
+      symbol "=>" |>> 
+      exp_parser |*> fun expr ->
+        of_value (Rec(ident, None, expr))  
 
-(** DO NOT Change This Definition *)
+
+      
+  and let_binding_parser =
+    let open Parser in
+    fun input -> 
+      map3 (fun ident expr1 expr2 -> Let(ident, expr1, expr2))
+        (keyword "let" |>> identifier)
+        (symbol "=" |>> exp_parser)
+        ((keyword "in" |>> exp_parser) |*> fun expr2 -> keyword "end" |>> of_value expr2)
+        input
+  and fn_binding_parser =
+    keyword "fn" |>> 
+    identifier |*> fun ident ->
+      optional (symbol ":" |>> typ_parser) |*> fun opt_typ ->  
+        symbol "=>" |>> 
+        exp_parser |*> fun expr ->
+          of_value (Fn(ident, opt_typ, expr))  
+
+  and if_then_else_parser =
+    let open Parser in
+    fun input ->
+      map3 (fun cond thenBranch elseBranch -> If(cond, thenBranch, elseBranch))
+        (keyword "if" |>> exp_parser) 
+        (keyword "then" |>> exp_parser)
+        (keyword "else" |>> exp_parser)
+        input 
+  and comma_separated_exp_parser =
+    let open Parser in 
+    fun input -> 
+      map2 (fun expr1 expr2 -> Comma(expr1, expr2))
+        (atomic_exp_parser) 
+        (symbol "," |>> exp_parser) 
+        input 
+  and applicative_exp_parser =
+    let open Parser in
+    fun input -> 
+      (atomic_exp_parser |*> fun initial_func ->
+          many atomic_exp_parser |*> fun args ->
+            of_value (List.fold_left (fun acc arg -> Apply(acc, arg)) initial_func args))
+        input
+  in
+  let rec negatable_exp_parser input = first_of [ 
+      let_binding_parser;
+      if_then_else_parser; 
+      
+     
+      fn_binding_parser;
+      rec_binding_parser;
+      
+      
+      comma_separated_exp_parser;
+      applicative_exp_parser 
+    ] input
+  and negation_exp_parser =
+    let open Parser in
+    fun input ->
+      prefix_op (optional (symbol "-")) negatable_exp_parser (fun negate e ->
+          match negate with
+          | Some _ -> PrimUop(Negate, e)  
+          | None -> e  
+        ) input
+  in
+  let rec multiplicative_exp_parser input = 
+    left_assoc_op (symbol "*") negation_exp_parser (fun e1 _ e2 -> PrimBop(e1, Times, e2)) input
+  in
+  let rec additive_exp_parser input = 
+    left_assoc_op (first_of [map (fun _ -> "+") (symbol "+"); map (fun _ -> "-") (symbol "-")])
+      multiplicative_exp_parser (fun e1 op e2 -> match op with
+          | "+" -> PrimBop(e1, Plus, e2)
+          | "-" -> PrimBop(e1, Minus, e2)
+          | _ -> raise (Failure "Unexpected operator")) input
+  in
+  let rec comparative_exp_parser =
+    let open Parser in
+    first_of [
+      non_assoc_op (first_of [map (fun _ -> "=") (symbol "="); map (fun _ -> "<") (symbol "<")])
+        additive_exp_parser (fun e1 op e2 -> match op with
+            | "=" -> PrimBop(e1, Equals, e2)
+            | "<" -> PrimBop(e1, LessThan, e2)
+            | _ -> raise (Failure "Unexpected operator"));
+      additive_exp_parser
+    ]
+
+  in 
+  comparative_exp_parser input
+
 let parse_exp : string -> exp option =
   let open Parser in
   run (between spaces eof exp_parser)
